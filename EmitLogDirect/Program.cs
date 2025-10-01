@@ -1,49 +1,37 @@
-﻿// Producer/Program.cs
-
-using RabbitMQ.Client;
+﻿using RabbitMQ.Client;
 using System.Text;
 
-// --- KẾT NỐI TỚI RABBITMQ ---
 var factory = new ConnectionFactory { HostName = "localhost" };
 using var connection = await factory.CreateConnectionAsync();
 using var channel = await connection.CreateChannelAsync();
 
-// --- KHAI BÁO EXCHANGE ---
-// Đảm bảo exchange 'direct_logs' tồn tại, loại 'direct'
-// Exchange 'direct' sẽ đẩy message tới queue có routing key khớp chính xác.
+// 1. Khai báo Exchange loại Direct
 await channel.ExchangeDeclareAsync(exchange: "direct_logs", type: ExchangeType.Direct);
 
-// --- CHUẨN BỊ MESSAGE ---
-// Lấy severity từ tham số dòng lệnh, mặc định là "info"
-var severity = (args.Length > 0) ? args[0] : "info";
+// Định nghĩa một loạt các tin nhắn và Routing Key cố định để kiểm tra
+var logMessages = new (string Severity, string Content)[]
+{
+    ("error", "Cần hành động ngay: Database connection failed!"),
+    ("warning", "Sắp đầy: Dung lượng ổ đĩa còn 10%."),
+    ("info", "User A đã đăng nhập thành công."),
+    ("error", "Lỗi nghiêm trọng: Server treo."),
+    ("debug", "Debug message - sẽ bị bỏ qua nếu không ai bind tới 'debug'") // Key không được bind
+};
 
-// Lấy message từ các tham số còn lại, mặc định là "Hello World!"
-var message = (args.Length > 1)
-            ? string.Join(" ", args.Skip(1))
-            : "Hello World!";
-var body = Encoding.UTF8.GetBytes(message);
+Console.WriteLine(" [x] Starting to publish log messages...");
 
-// --- GỬI MESSAGE ---
-// routingKey: Đóng vai trò như "địa chỉ" của message.
-// Exchange 'direct_logs' sẽ tìm queue nào có binding key khớp với 'severity' này để gửi tới.
-await channel.BasicPublishAsync(exchange: "direct_logs",
-                     routingKey: severity,
-                     body: body);
+// 2. Gửi các tin nhắn
+foreach (var log in logMessages)
+{
+    var body = Encoding.UTF8.GetBytes(log.Content);
+    await channel.BasicPublishAsync(
+        exchange: "direct_logs",
+        routingKey: log.Severity, // routingKey phải KHỚP CHÍNH XÁC với bindingKey
+        body: body);
 
-Console.WriteLine($" [x] Sent '{severity}':'{message}'");
+    Console.WriteLine($" [x] Sent '{log.Severity}' : '{log.Content}'");
+    await Task.Delay(100); // Tạm dừng để dễ quan sát
+}
 
-Console.WriteLine(" Press [enter] to exit.");
+Console.WriteLine("\n [x] All messages sent. Press [enter] to exit.");
 Console.ReadLine();
-
-/*
-# Di chuyển vào thư mục project Producer
-cd Producer
-
-# Chạy và truyền vào 'error' và nội dung tin nhắn
-dotnet run -- error "A critical error has occurred!" 
-
-
-dotnet run -- info "User has logged in successfully."    lần này không chạy đc vì không có consumer nào lắng nghe severity 'info'
-
-dotnet run -- warning "Disk space is running low."  oke
-*/
